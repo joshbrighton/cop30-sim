@@ -1,0 +1,7 @@
+{
+  "name": "cop30-sim",
+  "version": "1.0.0",
+  "dependencies": {
+    "ws": "8.13.0"
+  }
+}
