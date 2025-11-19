@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>COP30 Simulation</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <style>
     body {
       margin: 0;
@@ -26,18 +27,6 @@
       text-align: center;
     }
 
-    h1 {
-      font-size: 28px;
-      margin-bottom: 10px;
-      font-weight: 600;
-    }
-
-    p {
-      font-size: 16px;
-      margin-bottom: 30px;
-      line-height: 1.5;
-    }
-
     .mic {
       width: 90px;
       height: 90px;
@@ -48,7 +37,6 @@
       align-items: center;
       margin: 0 auto;
       cursor: pointer;
-      box-shadow: 0 0 0 0 rgba(0, 78, 164, 0.6);
       transition: transform 0.15s ease;
     }
 
@@ -58,13 +46,13 @@
       fill: white;
     }
 
-    .mic.active {
+    .active {
       animation: pulse 1.5s infinite;
     }
 
     @keyframes pulse {
       0% { box-shadow: 0 0 0 0 rgba(0, 78, 164, 0.6); }
-      70% { box-shadow: 0 0 0 18px rgba(0, 78, 164, 0); }
+      70% { box-shadow: 0 0 0 15px rgba(0, 78, 164, 0); }
       100% { box-shadow: 0 0 0 0 rgba(0, 78, 164, 0); }
     }
   </style>
@@ -73,7 +61,7 @@
 <body>
   <div class="container">
     <h1>COP30 Media Simulation</h1>
-    <p>Click the microphone to begin. When the mic activates, say “Ok, I’m ready.”</p>
+    <p>Click the microphone to begin. When activated, say “Ok, I’m ready.”</p>
 
     <div class="mic" id="micButton">
       <svg viewBox="0 0 24 24">
@@ -85,58 +73,72 @@
   <script>
     let audioContext;
     let micStream;
-    let processor;
     let ws;
 
     async function startSimulation() {
       const micButton = document.getElementById("micButton");
+      micButton.classList.add("active");
 
+      // Step 1: Call your Vercel API to get Retell session URL
+      const sessionRes = await fetch("/api/retell");
+
+      if (!sessionRes.ok) {
+        alert("Could not start the session. API error.");
+        console.error(await sessionRes.text());
+        return;
+      }
+
+      const session = await sessionRes.json();
+
+      // Step 2: Connect to Retell WebSocket
+      ws = new WebSocket(session.url);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => console.log("Connected to Retell");
+
+      ws.onerror = (err) => console.error("WebSocket error:", err);
+
+      // Step 3: Capture microphone audio
       audioContext = new AudioContext();
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const source = audioContext.createMediaStreamSource(micStream);
 
-      processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const source = audioContext.createMediaStreamSource(micStream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
       source.connect(processor);
       processor.connect(audioContext.destination);
 
-      ws = new WebSocket("wss://cop30-sim.vercel.app/api/retell");
-
-      ws.binaryType = "arraybuffer";
-
       processor.onaudioprocess = (e) => {
         if (ws.readyState === WebSocket.OPEN) {
-          const input = e.inputBuffer.getChannelData(0);
-          const int16 = new Int16Array(input.length);
-          for (let i = 0; i < input.length; i++) {
-            int16[i] = input[i] * 32767;
-          }
+          const float32 = e.inputBuffer.getChannelData(0);
+          const int16 = new Int16Array(float32.length);
+
+          for (let i = 0; i < float32.length; i++)
+            int16[i] = float32[i] * 32767;
+
           ws.send(int16);
         }
       };
 
-      ws.onmessage = (message) => {
-        playAudio(new Int16Array(message.data));
+      // Step 4: Play bot audio
+      ws.onmessage = (msg) => {
+        const int16 = new Int16Array(msg.data);
+        const float32 = new Float32Array(int16.length);
+
+        for (let i = 0; i < int16.length; i++)
+          float32[i] = int16[i] / 32767;
+
+        const buffer = audioContext.createBuffer(1, float32.length, audioContext.sampleRate);
+        buffer.getChannelData(0).set(float32);
+
+        const playback = audioContext.createBufferSource();
+        playback.buffer = buffer;
+        playback.connect(audioContext.destination);
+        playback.start();
       };
-
-      micButton.classList.add("active");
-    }
-
-    function playAudio(int16) {
-      const float32 = new Float32Array(int16.length);
-      for (let i = 0; i < int16.length; i++) {
-        float32[i] = int16[i] / 32767;
-      }
-      const buffer = audioContext.createBuffer(1, float32.length, audioContext.sampleRate);
-      buffer.getChannelData(0).set(float32);
-
-      const source = audioContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioContext.destination);
-      source.start();
     }
 
     document.getElementById("micButton").onclick = startSimulation;
   </script>
 </body>
 </html>
-
