@@ -3,7 +3,6 @@ export const config = {
 };
 
 export default async function handler(req) {
-  // Create a streaming session with Retell
   const sessionRes = await fetch("https://api.retellai.com/v1/streaming/sessions", {
     method: "POST",
     headers: {
@@ -19,7 +18,7 @@ export default async function handler(req) {
 
   const session = await sessionRes.json();
 
-  const retellSocket = new WebSocket(session.url, {
+  const retellSocket = new globalThis.WebSocket(session.url, {
     headers: {
       "Authorization": `Bearer ${process.env.RETELL_API_KEY}`,
     },
